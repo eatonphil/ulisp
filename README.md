@@ -9,7 +9,7 @@ The following program:
 
 ```
 $ cat tests/two_function_calls.js
-(plus 1 (plus 2 9))
+(+ 1 (+ 2 9))
 ```
 
 Returns 12 as its exit code when compiled:

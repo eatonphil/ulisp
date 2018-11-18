@@ -10,6 +10,10 @@ const SYSCALL_MAP = os.platform() === 'darwin' ? {
     'write': 1,
 };
 
+const BUILTIN_FUNCTIONS = {
+    '+': 'plus',
+};
+
 function emit(depth, args) {
     const indent = new Array(depth + 1).map(() => '').join('  ');
     OUT += `${indent}${args}\n`;
@@ -38,7 +42,7 @@ function compile_call(fun, args, destination) {
     // Compile registers and store as params
     args.map((arg, i) => compile_argument(arg, PARAM_REGISTERS[i]));
 
-    emit(1, `CALL ${fun}`);
+    emit(1, `CALL ${BUILTIN_FUNCTIONS[fun] || fun}`);
 
     // Restore param registers
     args.map((_, i) => emit(1, `POP ${PARAM_REGISTERS[args.length - i - 1]}`));
