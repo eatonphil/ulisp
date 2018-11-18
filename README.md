@@ -1,7 +1,7 @@
 # ulisp
 
-A minimal, mostly wrong compiler for a lisp-like language to assembly.
-
+A minimal, mostly wrong assembly compiler for a lisp-like language
+written in Javascript.
 
 ### Example
 
