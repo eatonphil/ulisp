@@ -9,7 +9,7 @@ module.exports.parse = function parse (program = '') {
 	    const [parsed, rest] = parse(program.substring(i + 1));
 	    tokens.push(parsed);
 	    program = rest;
-	    i = 0;
+	    i = -1;
 	} else if (char === ')') {
 	    tokens.push(+currentToken || currentToken);
 	    return [tokens, program.substring(i + 1)];
