@@ -11,7 +11,9 @@ module.exports.parse = function parse (program = '') {
 	    program = rest;
 	    i = -1;
 	} else if (char === ')') {
-	    tokens.push(+currentToken || currentToken);
+            if (currentToken) {
+                tokens.push(+currentToken || currentToken);
+            }
 	    return [tokens, program.substring(i + 1)];
 	} else if (char === ' ') {
 	    tokens.push(+currentToken || currentToken);
