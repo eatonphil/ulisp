@@ -15,7 +15,7 @@ const BUILTIN_FUNCTIONS = {
 };
 
 function emit(depth, args) {
-    const indent = new Array(depth + 1).map(() => '').join('  ');
+    const indent = new Array(depth + 1).join('  ');
     OUT += `${indent}${args}\n`;
 }
 
