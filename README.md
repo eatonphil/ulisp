@@ -9,7 +9,8 @@ The following program:
 
 ```
 $ cat tests/two_function_calls.js
-(+ 1 (+ 2 9))
+(def main ()
+     (+ 1 (+ 2 9)))
 ```
 
 Returns 12 as its exit code when compiled:
@@ -33,7 +34,7 @@ plus:
   MOV RAX, RDI
   RET
 
-_main:
+main:
   PUSH RDI
   PUSH RSI
   MOV RDI, 1
@@ -45,11 +46,13 @@ _main:
   POP RSI
   POP RDI
   MOV RSI, RAX
-
   CALL plus
   POP RSI
   POP RDI
+  RET
 
+_main:
+  CALL main
   MOV RDI, RAX
   MOV RAX, 0x2000001
   SYSCALL
