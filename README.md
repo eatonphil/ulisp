@@ -3,6 +3,11 @@
 A minimal, mostly wrong assembly compiler for a lisp-like language
 written in Javascript.
 
+### Tutorials
+
+1. [Lisp to Assembly](http://notes.eatonphil.com/compiler-basics-lisp-to-assembly.html)
+2. [User-defined functions and variables](http://notes.eatonphil.com/compiler-basics-functions.html)
+
 ### Example
 
 The following program:
