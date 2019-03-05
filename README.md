@@ -13,18 +13,21 @@ written in Javascript.
 The following program:
 
 ```
-$ cat tests/two_function_calls.js
+$ cat tests/function_definition.lisp
+(def plus-two (a b)
+     (+ a (+ b 2)))
+	 
 (def main ()
-     (+ 1 (+ 2 9)))
+     (plus-two 3 (plus-two 1 1)))
 ```
 
-Returns 12 as its exit code when compiled:
+Returns 9 as its exit code when compiled:
 
 ```
-$ node ulisp.js tests/two_function_calls.js
-$ ./build/a.out
+$ node ulisp.js tests/function_definition.lisp
+$ ./build/prog
 $ echo $?
-12
+9
 ```
 
 By generating this LLVM IR:
