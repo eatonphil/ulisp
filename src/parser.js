@@ -1,30 +1,30 @@
-module.exports.parse = function parse(program = "") {
+module.exports.parse = function parse(program = '') {
   const tokens = [];
-  let currentToken = "";
+  let currentToken = '';
 
   for (let i = 0; i < program.length; i++) {
     const char = program.charAt(i);
 
-    if (char === "(") {
+    if (char === '(') {
       const [parsed, rest] = parse(program.substring(i + 1));
       tokens.push(parsed);
       program = rest;
       i = -1;
-    } else if (char === ")") {
+    } else if (char === ')') {
       if (currentToken.length) {
         tokens.push(+currentToken || currentToken);
       }
 
       return [tokens, program.substring(i + 1)];
-    } else if (char === " " || char == "\n") {
+    } else if (char === ' ' || char == '\n') {
       if (currentToken.length) {
         tokens.push(+currentToken || currentToken);
       }
-      currentToken = "";
+      currentToken = '';
     } else {
       currentToken += char;
     }
   }
 
-  return [tokens, ""];
+  return [tokens, ''];
 };

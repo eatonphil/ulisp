@@ -1,6 +1,6 @@
 # ulisp
 
-A minimal, mostly wrong assembly compiler for a lisp-like language
+A minimal, mostly wrong compiler for a lisp-like language
 written in Javascript.
 
 ### Tutorials
@@ -27,38 +27,24 @@ $ echo $?
 12
 ```
 
-By generating this assembly:
+By generating this LLVM IR:
 
-```
-  .global _main
+```llvm
+define i32 @plus_two(i32 %a, i32 %b) {
+  %sym7 = add i32 %a, 0
+  %sym9 = add i32 %b, 0
+  %sym10 = add i32 2, 0
+  %sym8 = add i32 %sym9, %sym10
+  %sym6 = add i32 %sym7, %sym8
+  ret i32 %sym6
+}
 
-  .text
-
-plus:
-  ADD RDI, RSI
-  MOV RAX, RDI
-  RET
-
-main:
-  PUSH RDI
-  PUSH RSI
-  MOV RDI, 1
-  PUSH RDI
-  PUSH RSI
-  MOV RDI, 2
-  MOV RSI, 9
-  CALL plus
-  POP RSI
-  POP RDI
-  MOV RSI, RAX
-  CALL plus
-  POP RSI
-  POP RDI
-  RET
-
-_main:
-  CALL main
-  MOV RDI, RAX
-  MOV RAX, 0x2000001
-  SYSCALL
+define i32 @main() {
+  %sym6 = add i32 3, 0
+  %sym8 = add i32 1, 0
+  %sym9 = add i32 1, 0
+  %sym7 = call i32 @plus_two(i32 %sym8, i32 %sym9)
+  %sym5 = call i32 @plus_two(i32 %sym6, i32 %sym7)
+  ret i32 %sym5
+}
 ```

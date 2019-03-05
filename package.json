@@ -4,6 +4,17 @@
     "prettier": "^1.16.1"
   },
   "scripts": {
-    "lint": "prettier --write *.js"
+    "lint": "./scripts/lint.sh",
+    "lint:fix": "./scripts/lint.sh --fix"
+  },
+  "prettier": {
+    "singleQuote": true,
+    "arrowParens": "always",
+    "trailingComma": "all"
+  },
+  "dependencies": {
+    "eslint": "^5.15.0",
+    "eslint-config-prettier": "^4.1.0",
+    "prettylint": "^1.0.0"
   }
 }
