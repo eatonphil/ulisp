@@ -5,8 +5,9 @@ written in Javascript.
 
 ### Tutorials
 
-1. [Lisp to Assembly](http://notes.eatonphil.com/compiler-basics-lisp-to-assembly.html)
+1. [Lisp to assembly](http://notes.eatonphil.com/compiler-basics-lisp-to-assembly.html)
 2. [User-defined functions and variables](http://notes.eatonphil.com/compiler-basics-functions.html)
+3. [LLVM](http://notes.eatonphil.com/compiler-basics-llvm.html)
 
 ### Example
 
@@ -24,7 +25,7 @@ $ cat tests/function_definition.lisp
 Returns 9 as its exit code when compiled:
 
 ```
-$ node ulisp.js tests/function_definition.lisp
+$ node src/ulisp.js tests/function_definition.lisp
 $ ./build/prog
 $ echo $?
 9
