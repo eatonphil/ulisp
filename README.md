@@ -1,7 +1,6 @@
 # ulisp
 
-A minimal, mostly wrong compiler for a lisp-like language
-written in Javascript.
+A compiler for a lisp-like language written in JavaScript targeting LLVM, x86 assembly.
 
 ### Tutorials
 
