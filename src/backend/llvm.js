@@ -1,37 +1,7 @@
 const cp = require('child_process');
 const fs = require('fs');
 
-class Scope {
-  constructor() {
-    this.locals = {};
-  }
-
-  symbol() {
-    const nth = Object.keys(this.locals).length + 1;
-    return this.register('sym' + nth);
-  }
-
-  get(i) {
-    return this.locals[i];
-  }
-
-  register(local) {
-    let copy = local.replace('-', '_');
-    let n = 1;
-    while (this.locals[copy]) {
-      copy = local + n++;
-    }
-
-    this.locals[local] = copy;
-    return copy;
-  }
-
-  copy() {
-    const c = new Scope();
-    c.locals = { ...this.locals };
-    return c;
-  }
-}
+const { Scope } = require('./utility/Scope');
 
 class Compiler {
   constructor() {
@@ -39,9 +9,12 @@ class Compiler {
     this.primitiveFunctions = {
       def: this.compileDefine.bind(this),
       begin: this.compileBegin.bind(this),
+      'if': this.compileIf.bind(this),
       '+': this.compileOp('add'),
       '-': this.compileOp('sub'),
       '*': this.compileOp('mul'),
+      '<': this.compileOp('icmp slt'),
+      '=': this.compileOp('icmp eq'),
     };
   }
 
@@ -91,6 +64,38 @@ class Compiler {
         scope,
       ),
     );
+  }
+
+  compileIf([test, thenBlock, elseBlock], destination, scope) {
+    const testVariable = scope.symbol();
+    const result = scope.symbol('ifresult');
+    // Space for result
+    this.emit(1, `%${result} = alloca i32, align 4`);
+
+    // Compile expression and branch
+    this.compileExpression(test, testVariable, scope);
+    const trueLabel = scope.symbol('iftrue');
+    const falseLabel = scope.symbol('iffalse');
+    this.emit(1, `br i1 %${testVariable}, label %${trueLabel}, label %${falseLabel}`);
+
+    // Compile true section
+    this.emit(0, trueLabel + ':');
+    const tmp1 = scope.symbol();
+    this.compileExpression(thenBlock, tmp1, scope);
+    this.emit(1, `store i32 %${tmp1}, i32* %${result}, align 4`);
+    const endLabel = scope.symbol('ifend');
+    this.emit(1, 'br label %' + endLabel);
+    this.emit(0, falseLabel + ':');
+
+    // Compile false section
+    const tmp2 = scope.symbol();
+    this.compileExpression(elseBlock, tmp2, scope);
+    this.emit(1, `store i32 %${tmp2}, i32* %${result}, align 4`);
+    this.emit(1, 'br label %' + endLabel);
+
+    // Compile cleanup
+    this.emit(0, endLabel + ':');
+    this.emit(1, `%${destination} = load i32, i32* %${result}, align 4`);
   }
 
   compileDefine([name, params, ...body], destination, scope) {

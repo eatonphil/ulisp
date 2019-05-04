@@ -1,3 +1,5 @@
+const WHITESPACE = [' ', '\n', '\t'];
+
 module.exports.parse = function parse(program = '') {
   const tokens = [];
   let currentToken = '';
@@ -16,7 +18,7 @@ module.exports.parse = function parse(program = '') {
       }
 
       return [tokens, program.substring(i + 1)];
-    } else if (char === ' ' || char == '\n') {
+    } else if (WHITESPACE.includes(char)) {
       if (currentToken.length) {
         tokens.push(+currentToken || currentToken);
       }
