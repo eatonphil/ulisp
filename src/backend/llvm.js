@@ -1,7 +1,16 @@
 const cp = require('child_process');
 const fs = require('fs');
 
-const { Scope } = require('./utility/Scope');
+const { Context } = require('./utility/Context');
+
+const SYSCALL_TABLE = {
+  darwin: {
+    sys_write: '0x2000004',
+  },
+  linux: {
+    sys_write: 1,
+  },
+}[process.platform];
 
 class Compiler {
   constructor() {
@@ -13,8 +22,10 @@ class Compiler {
       '+': this.compileOp('add'),
       '-': this.compileOp('sub'),
       '*': this.compileOp('mul'),
+      '/': this.compileOp('udiv'),
       '<': this.compileOp('icmp slt'),
       '=': this.compileOp('icmp eq'),
+      'syscall/sys_write': this.compileSyscall(SYSCALL_TABLE.sys_write),
     };
   }
 
@@ -23,31 +34,60 @@ class Compiler {
     this.outBuffer.push(indent + args);
   }
 
+  compileSyscall(id) {
+    return (args, destination, context) => {
+      const argTmps = args.map((arg) => {
+	const tmp = context.scope.symbol();
+	this.compileExpression(arg, tmp, context);
+	return tmp.type + ' %' + tmp.value;
+      }).join(', ');
+      const inlineAsm = [
+	'mov rdi, $1',
+	'mov rsi, $2',
+	'mov rdx, $3',
+	'mov r10, $4',
+	'mov r8, $5',
+	'mov r9, $6',
+      ].filter((a, i) => i < args.length).join('\n') + `\nmov rax, ${id}\n syscall`;
+      this.emit(1, `%${destination.value} = call ${destination.type} asm "${inlineAsm}", "=r,${args.map(a => 'r').join(',')}" (${argTmps})`);
+    }
+  }
+
   compileOp(op) {
-    return ([a, b], destination, scope) => {
-      const arg1 = scope.symbol();
-      const arg2 = scope.symbol();
-      this.compileExpression(a, arg1, scope);
-      this.compileExpression(b, arg2, scope);
-      this.emit(1, `%${destination} = ${op} i32 %${arg1}, %${arg2}`);
+    return ([a, b], destination, context) => {
+      const arg1 = context.scope.symbol();
+      const arg2 = context.scope.symbol();
+      this.compileExpression(a, arg1, context);
+      this.compileExpression(b, arg2, context);
+      this.emit(1, `%${destination.value} = ${op} ${arg1.type} %${arg1.value}, %${arg2.value}`);
     };
   }
 
-  compileExpression(exp, destination, scope) {
+  compileExpression(exp, destination, context) {
     // Is a nested function call, compile it
     if (Array.isArray(exp)) {
-      this.compileCall(exp[0], exp.slice(1), destination, scope);
+      this.compileCall(exp[0], exp.slice(1), destination, context);
       return;
     }
 
-    const res = scope.get(exp);
-    if (Number.isInteger(exp)) {
-      this.emit(1, `%${destination} = add i32 ${exp}, 0`);
+    if (Number.isInteger(+exp)) {
+      this.emit(1, `%${destination.value} = add i64 ${exp}, 0`);
       return;
     }
 
+    if (exp.startsWith('&')) {
+      const symbol = exp.substring(1);
+      const tmp = context.scope.symbol();
+      this.compileExpression(symbol, tmp, context);
+      this.emit(1, `%${destination.value} = alloca ${tmp.type}, align 4`);
+      destination.type = tmp.type + '*';
+      this.emit(1, `store ${tmp.type} %${tmp.value}, ${destination.type} %${destination.value}, align 4`);
+      return;
+    }
+
+    const res = context.scope.get(exp);
     if (res) {
-      this.emit(1, `%${destination} = add i32 %${res}, 0`);
+      this.emit(1, `%${destination.value} = add ${res.type} %${res.value}, 0`);
     } else {
       throw new Error(
         'Attempt to reference undefined variable or unsupported literal: ' +
@@ -56,91 +96,95 @@ class Compiler {
     }
   }
 
-  compileBegin(body, destination, scope) {
+  compileBegin(body, destination, context) {
     body.forEach((expression, i) =>
       this.compileExpression(
         expression,
-        i === body.length - 1 ? destination : scope.symbol(),
-        scope,
+        i === body.length - 1 ? destination : context.scope.symbol(),
+        context,
       ),
     );
   }
 
-  compileIf([test, thenBlock, elseBlock], destination, scope) {
-    const testVariable = scope.symbol();
-    const result = scope.symbol('ifresult');
+  compileIf([test, thenBlock, elseBlock], destination, context) {
+    const testVariable = context.scope.symbol();
+    const result = context.scope.symbol('ifresult');
     // Space for result
-    this.emit(1, `%${result} = alloca i32, align 4`);
+    result.type = 'i64*';
+    this.emit(1, `%${result.value} = alloca i64, align 4`);
 
     // Compile expression and branch
-    this.compileExpression(test, testVariable, scope);
-    const trueLabel = scope.symbol('iftrue');
-    const falseLabel = scope.symbol('iffalse');
-    this.emit(1, `br i1 %${testVariable}, label %${trueLabel}, label %${falseLabel}`);
+    this.compileExpression(test, testVariable, context);
+    const trueLabel = context.scope.symbol('iftrue').value;
+    const falseLabel = context.scope.symbol('iffalse').value;
+    this.emit(1, `br i1 %${testVariable.value}, label %${trueLabel}, label %${falseLabel}`);
 
     // Compile true section
     this.emit(0, trueLabel + ':');
-    const tmp1 = scope.symbol();
-    this.compileExpression(thenBlock, tmp1, scope);
-    this.emit(1, `store i32 %${tmp1}, i32* %${result}, align 4`);
-    const endLabel = scope.symbol('ifend');
+    const tmp1 = context.scope.symbol();
+    this.compileExpression(thenBlock, tmp1, context);
+    this.emit(1, `store ${tmp1.type} %${tmp1}, ${result.type} %${result.value}, align 4`);
+    const endLabel = context.scope.symbol('ifend').value;
     this.emit(1, 'br label %' + endLabel);
     this.emit(0, falseLabel + ':');
 
     // Compile false section
-    const tmp2 = scope.symbol();
-    this.compileExpression(elseBlock, tmp2, scope);
-    this.emit(1, `store i32 %${tmp2}, i32* %${result}, align 4`);
+    const tmp2 = context.scope.symbol();
+    this.compileExpression(elseBlock, tmp2, context);
+    this.emit(1, `store ${tmp2.type} %${tmp2}, ${result.type} %${result.value}, align 4`);
     this.emit(1, 'br label %' + endLabel);
 
     // Compile cleanup
     this.emit(0, endLabel + ':');
-    this.emit(1, `%${destination} = load i32, i32* %${result}, align 4`);
+    this.emit(1, `%${destination.value} = load ${destination.type}, ${result.type} %${result}, align 4`);
   }
 
-  compileDefine([name, params, ...body], destination, scope) {
-    // Add this function to outer scope
-    const safeName = scope.register(name);
+  compileDefine([name, params, ...body], destination, context) {
+    // Add this function to outer context.scope
+    const fn = context.scope.register(name);
 
-    // Copy outer scope so parameter mappings aren't exposed in outer scope.
-    const childScope = scope.copy();
+    // Copy outer context.scope so parameter mappings aren't exposed in outer context.scope.
+    const childContext = context.copy();
+    childContext.tailCallTree.push(fn.value);
 
     const safeParams = params.map((param) =>
       // Store parameter mapped to associated local
-      childScope.register(param),
+      childContext.scope.register(param),
     );
 
     this.emit(
       0,
-      `define i32 @${safeName}(${safeParams
-        .map((p) => `i32 %${p}`)
+      `define fastcc i64 @${fn.value}(${safeParams
+        .map((p) => `${p.type} %${p.value}`)
         .join(', ')}) {`,
     );
 
-    // Pass childScope in for reference when body is compiled.
-    const ret = childScope.symbol();
-    this.compileExpression(body[0], ret, childScope);
+    // Pass childContext in for reference when body is compiled.
+    const ret = childContext.scope.symbol();
+    this.compileExpression(body[0], ret, childContext);
 
-    this.emit(1, `ret i32 %${ret}`);
+    this.emit(1, `ret ${ret.type} %${ret.value}`);
     this.emit(0, '}\n');
   }
 
-  compileCall(fun, args, destination, scope) {
+  compileCall(fun, args, destination, context) {
     if (this.primitiveFunctions[fun]) {
-      this.primitiveFunctions[fun](args, destination, scope);
+      this.primitiveFunctions[fun](args, destination, context);
       return;
     }
 
-    const validFunction = scope.get(fun);
+    const validFunction = context.scope.get(fun);
     if (validFunction) {
       const safeArgs = args
         .map((a) => {
-          const res = scope.symbol();
-          this.compileExpression(a, res, scope);
-          return 'i32 %' + res;
+          const res = context.scope.symbol();
+          this.compileExpression(a, res, context);
+          return res.type + ' %' + res.value;
         })
-        .join(', ');
-      this.emit(1, `%${destination} = call i32 @${validFunction}(${safeArgs})`);
+	.join(', ');
+
+      const maybeTail = context.tailCallTree.includes(validFunction.value) ? 'tail ' : '';
+      this.emit(1, `%${destination.value} = ${maybeTail}call fastcc ${validFunction.type} @${validFunction.value}(${safeArgs})`);
     } else {
       throw new Error('Attempt to call undefined function: ' + fun);
     }
@@ -153,14 +197,14 @@ class Compiler {
 
 module.exports.compile = function(ast) {
   const c = new Compiler();
-  const scope = new Scope();
-  c.compileCall('begin', ast, scope.symbol(), scope);
+  const context = new Context();
+  c.compileCall('begin', ast, context.scope.symbol(), context);
   return c.getOutput();
 };
 
 module.exports.build = function(buildDir, program) {
   const prog = 'prog';
   fs.writeFileSync(buildDir + `/${prog}.ll`, program);
-  cp.execSync(`llc -o ${buildDir}/${prog}.s ${buildDir}/${prog}.ll`);
-  cp.execSync(`gcc -o ${buildDir}/${prog} ${buildDir}/${prog}.s`);
+  cp.execSync(`llc --x86-asm-syntax=intel -o ${buildDir}/${prog}.s ${buildDir}/${prog}.ll`);
+  cp.execSync(`gcc -o ${buildDir}/${prog} -masm=intel ${buildDir}/${prog}.s`);
 };
