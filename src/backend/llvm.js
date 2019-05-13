@@ -5,10 +5,12 @@ const { Context } = require('./utility/Context');
 
 const SYSCALL_TABLE = {
   darwin: {
-    sys_write: '0x2000004',
+    sys_write: 0x2000004,
+    sys_exit: 0x2000001,
   },
   linux: {
     sys_write: 1,
+    sys_exit: 60,
   },
 }[process.platform];
 
@@ -26,6 +28,7 @@ class Compiler {
       '<': this.compileOp('icmp slt'),
       '=': this.compileOp('icmp eq'),
       'syscall/sys_write': this.compileSyscall(SYSCALL_TABLE.sys_write),
+      'syscall/sys_exit': this.compileSyscall(SYSCALL_TABLE.sys_exit),
     };
   }
 
@@ -41,15 +44,11 @@ class Compiler {
 	this.compileExpression(arg, tmp, context);
 	return tmp.type + ' %' + tmp.value;
       }).join(', ');
-      const inlineAsm = [
-	'mov rdi, $1',
-	'mov rsi, $2',
-	'mov rdx, $3',
-	'mov r10, $4',
-	'mov r8, $5',
-	'mov r9, $6',
-      ].filter((a, i) => i < args.length).join('\n') + `\nmov rax, ${id}\n syscall`;
-      this.emit(1, `%${destination.value} = call ${destination.type} asm "${inlineAsm}", "=r,${args.map(a => 'r').join(',')}" (${argTmps})`);
+      const regs = ['rdi', 'rsi', 'rdx', 'r10', 'r8', 'r9'];
+      const params = args.map((arg, i) => `{${regs[i]}}`).join(',');
+      const idTmp = context.scope.symbol().value;
+      this.emit(1, `%${idTmp} = add i64 ${id}, 0`)
+      this.emit(1, `%${destination.value} = call ${destination.type} asm sideeffect "syscall", "=r,{rax},${params}" (i64 %${idTmp}, ${argTmps})`);
     }
   }
 
@@ -161,7 +160,7 @@ class Compiler {
 
     // Pass childContext in for reference when body is compiled.
     const ret = childContext.scope.symbol();
-    this.compileExpression(body[0], ret, childContext);
+    this.compileBegin(body, ret, childContext);
 
     this.emit(1, `ret ${ret.type} %${ret.value}`);
     this.emit(0, '}\n');

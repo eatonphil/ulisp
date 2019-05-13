@@ -18,6 +18,10 @@ module.exports.parse = function parse(program = '') {
       }
 
       return [tokens, program.substring(i + 1)];
+    } else if (char === ';') {
+      while (program.charAt(i) !== '\n') {
+	i++;
+      }
     } else if (WHITESPACE.includes(char)) {
       if (currentToken.length) {
         tokens.push(+currentToken || currentToken);
