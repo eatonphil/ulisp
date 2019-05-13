@@ -8,17 +8,25 @@ function main(args) {
   const kernel = fs.readFileSync(__dirname + '/../lib/kernel.lisp').toString();
   const input = kernel + '\n' + fs.readFileSync(args[2]).toString();
 
-  let backend;
-  switch (args[3]) {
-    case 'llvm':
-    case undefined:
-      backend = backends.llvm;
-      break;
-    case 'x86':
-      backend = backends.x86;
-      break;
-    default:
-      console.log('Unsupported backend ' + args[3]);
+  let backend = backends.llvm;
+
+  const restArgs = args.slice(2);
+  for (let i = 0; i < restArgs.length; i++) {
+    switch (restArgs[i]) {
+      case '--backend':
+      case '-b':
+	backend = backends[args[i + 1]];
+	if (!backend) {
+	  console.log('Unsupported backend ' + args[i+1]);
+	  process.exit(1);
+	}
+	i++;
+	break;
+      case '--no-tail-call':
+      case '-n':
+	backend.TAIL_CALL_ENABLED = false;
+	break;
+    }
   }
 
   const [ast] = parse(input);

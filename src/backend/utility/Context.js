@@ -8,6 +8,7 @@ class Context {
 
   copy() {
     const c = new Context();
+    c.tailCallTree = [...this.tailCallTree];
     c.scope = this.scope.copy();
     return c;
   }

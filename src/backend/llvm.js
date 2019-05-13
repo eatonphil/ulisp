@@ -50,7 +50,7 @@ class Compiler {
       const params = args.map((arg, i) => `{${regs[i]}}`).join(',');
       const idTmp = context.scope.symbol().value;
       this.emit(1, `%${idTmp} = add i64 ${id}, 0`)
-      this.emit(1, `%${destination.value} = call ${destination.type} asm sideeffect "syscall", "=r,{rax},${params}" (i64 %${idTmp}, ${argTmps})`);
+      this.emit(1, `%${destination.value} = call ${destination.type} asm sideeffect "syscall", "=r,{rax},${params},~{dirflag},~{fpsr},~{flags}" (i64 %${idTmp}, ${argTmps})`);
     }
   }
 
@@ -98,13 +98,22 @@ class Compiler {
   }
 
   compileBegin(body, destination, context) {
-    body.forEach((expression, i) =>
+    body.forEach((expression, i) => {
+      const isLast = body.length - 1 === i;
+
+      // Clone just to reset tailCallTree
+      const contextClone = context.copy();
+      contextClone.scope = context.scope;
+      if (!isLast) {
+	contextClone.tailCallTree = [];
+      }
+
       this.compileExpression(
         expression,
-        i === body.length - 1 ? destination : context.scope.symbol(),
-        context,
-      ),
-    );
+        isLast ? destination : context.scope.symbol(),
+	contextClone,
+      );
+    });
   }
 
   compileIf([test, thenBlock, elseBlock], destination, context) {
@@ -157,7 +166,7 @@ class Compiler {
 
     this.emit(
       0,
-      `define fastcc i64 @${fn.value}(${safeParams
+      `define i64 @${fn.value}(${safeParams
         .map((p) => `${p.type} %${p.value}`)
         .join(', ')}) {`,
     );
@@ -186,8 +195,13 @@ class Compiler {
         })
 	.join(', ');
 
-      const maybeTail = context.tailCallTree.includes(validFunction.value) ? 'tail ' : '';
-      this.emit(1, `%${destination.value} = ${maybeTail}call fastcc ${validFunction.type} @${validFunction.value}(${safeArgs})`);
+      const isTailCall = module.exports.TAIL_CALL_ENABLED &&
+			 context.tailCallTree.includes(validFunction.value);
+      const maybeTail = isTailCall ? 'tail ' : '';
+      this.emit(1, `%${destination.value} = ${maybeTail}call ${validFunction.type} @${validFunction.value}(${safeArgs})`);
+      if (isTailCall) {
+	this.emit(1, `ret ${destination.type} %${destination.value}`);
+      }
     } else {
       throw new Error('Attempt to call undefined function: ' + fun);
     }
@@ -211,3 +225,5 @@ module.exports.build = function(buildDir, program) {
   cp.execSync(`llc --x86-asm-syntax=intel -o ${buildDir}/${prog}.s ${buildDir}/${prog}.ll`);
   cp.execSync(`gcc -o ${buildDir}/${prog} -masm=intel ${buildDir}/${prog}.s`);
 };
+
+module.exports.TAIL_CALL_ENABLED = true;
