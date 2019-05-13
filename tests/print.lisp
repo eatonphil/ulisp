@@ -6,3 +6,6 @@
 	 (print (/ n 10)))
 
      (print-char (+ 48 (% n 10))))
+
+(def main ()
+     (print 10239))

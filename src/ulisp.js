@@ -5,7 +5,8 @@ const { parse } = require('./parser');
 const backends = require('./backend');
 
 function main(args) {
-  const input = fs.readFileSync(args[2]).toString();
+  const kernel = fs.readFileSync(__dirname + '/../lib/kernel.lisp').toString();
+  const input = kernel + '\n' + fs.readFileSync(args[2]).toString();
 
   let backend;
   switch (args[3]) {

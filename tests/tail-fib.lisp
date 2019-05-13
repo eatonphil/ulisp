@@ -7,4 +7,4 @@
      (fib-help 0 1 n))
 
 (def main ()
-     (fib 20))
+     (print (fib 45)))

@@ -25,7 +25,9 @@ class Compiler {
       '-': this.compileOp('sub'),
       '*': this.compileOp('mul'),
       '/': this.compileOp('udiv'),
+      '%': this.compileOp('urem'),
       '<': this.compileOp('icmp slt'),
+      '>': this.compileOp('icmp sgt'),
       '=': this.compileOp('icmp eq'),
       'syscall/sys_write': this.compileSyscall(SYSCALL_TABLE.sys_write),
       'syscall/sys_exit': this.compileSyscall(SYSCALL_TABLE.sys_exit),
@@ -122,20 +124,22 @@ class Compiler {
     this.emit(0, trueLabel + ':');
     const tmp1 = context.scope.symbol();
     this.compileExpression(thenBlock, tmp1, context);
-    this.emit(1, `store ${tmp1.type} %${tmp1}, ${result.type} %${result.value}, align 4`);
+    this.emit(1, `store ${tmp1.type} %${tmp1.value}, ${result.type} %${result.value}, align 4`);
     const endLabel = context.scope.symbol('ifend').value;
     this.emit(1, 'br label %' + endLabel);
-    this.emit(0, falseLabel + ':');
 
-    // Compile false section
-    const tmp2 = context.scope.symbol();
-    this.compileExpression(elseBlock, tmp2, context);
-    this.emit(1, `store ${tmp2.type} %${tmp2}, ${result.type} %${result.value}, align 4`);
+    // Compile optional false section
+    this.emit(0, falseLabel + ':');
+    if (elseBlock) {
+      const tmp2 = context.scope.symbol();
+      this.compileExpression(elseBlock, tmp2, context);
+      this.emit(1, `store ${tmp2.type} %${tmp2.value}, ${result.type} %${result.value}, align 4`);
+    }
     this.emit(1, 'br label %' + endLabel);
 
     // Compile cleanup
     this.emit(0, endLabel + ':');
-    this.emit(1, `%${destination.value} = load ${destination.type}, ${result.type} %${result}, align 4`);
+    this.emit(1, `%${destination.value} = load ${destination.type}, ${result.type} %${result.value}, align 4`);
   }
 
   compileDefine([name, params, ...body], destination, context) {
