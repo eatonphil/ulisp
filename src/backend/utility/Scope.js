@@ -19,8 +19,11 @@ class Scope {
       copy = local + n++;
     }
 
-    this.locals[local] = copy;
-    return copy;
+    this.locals[local] = {
+      value: copy,
+      type: 'i64',
+    };
+    return this.locals[local];
   }
 
   copy() {
