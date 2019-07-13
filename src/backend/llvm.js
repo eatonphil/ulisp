@@ -76,6 +76,7 @@ class Compiler {
       return;
     }
 
+    // Is a reference, push onto the stack and return its address
     if (exp.startsWith('&')) {
       const symbol = exp.substring(1);
       const tmp = context.scope.symbol();
