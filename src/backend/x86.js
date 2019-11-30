@@ -17,9 +17,27 @@ const BUILTIN_FUNCTIONS = {
   '+': 'plus',
 };
 
-const PARAM_REGISTERS = ['RDI', 'RSI', 'RDX'];
+class Scope {
+  localOffset = 0;
+  map = {};
 
-const LOCAL_REGISTERS = ['RBX', 'RBP', 'R12'];
+  assign(name) {
+    const safe = name.replace('-', '_');
+    s.map[name] = this.localOffset++;
+    return safe;
+  }
+
+  lookup(name) {
+    const safe = name.replace('-', '_');
+    return s.map[name];
+  }
+
+  copy() {
+    const s = new Scope();
+    s.map = { ...this.map };
+    return;
+  }
+}
 
 class Compiler {
   constructor() {
@@ -35,6 +53,12 @@ class Compiler {
     this.outBuffer.push(indent + args);
   }
 
+  store(name, value, scope) {
+    this.emit(1, `PUSH ${value}`);
+    // Store parameter mapped to associated local
+    scope.map[name] = scope.localOffset++;
+  }
+
   compileExpression(arg, destination, scope) {
     // Is a nested function call, compile it
     if (Array.isArray(arg)) {
@@ -42,8 +66,11 @@ class Compiler {
       return;
     }
 
-    if (scope[arg] || Number.isInteger(arg)) {
-      this.emit(1, `MOV ${destination}, ${scope[arg] || arg}`);
+    const stackOffset = scope.lookup(arg);
+    if (Number.isInteger(arg)) {
+      this.emit(1, `MOV ${destination}, ${arg}`);
+    } else if (stackOffset !== undefined) {
+      this.emit(1, `MOV ${destination}, QWORD PTR [RSP + ${stackOffset}]`);
     } else {
       throw new Error(
         'Attempt to reference undefined variable or unsupported literal: ' +
@@ -63,24 +90,20 @@ class Compiler {
 
   compileDefine([name, params, ...body], destination, scope) {
     // Add this function to outer scope
-    scope[name] = name.replace('-', '_');
+    const safe = scope.assign(name, '');
 
     // Copy outer scope so parameter mappings aren't exposed in outer scope.
-    const childScope = { ...scope };
+    const childScope = scope.copy();
 
-    this.emit(0, `${scope[name]}:`);
+    this.emit(0, `${safe}:`);
 
     params.forEach((param, i) => {
       const register = PARAM_REGISTERS[i];
-      const local = LOCAL_REGISTERS[i];
-      this.emit(1, `PUSH ${local}`);
-      this.emit(1, `MOV ${local}, ${register}`);
-      // Store parameter mapped to associated local
-      childScope[param] = local;
+      this.store(param, register, childScope);
     });
 
     // Pass childScope in for reference when body is compiled.
-    this.compileExpression(body[0], 'RAX', childScope);
+    this.compileBegin(body, 'RAX', childScope);
 
     params.forEach((param, i) => {
       // Backwards first
@@ -149,7 +172,8 @@ class Compiler {
 module.exports.compile = function(ast) {
   const c = new Compiler();
   c.emitPrefix();
-  c.compileCall('begin', ast, 'RAX', {});
+  const s = new Scope();
+  c.compileCall('begin', ast, 'RAX', s);
   c.emitPostfix();
   return c.getOutput();
 };
