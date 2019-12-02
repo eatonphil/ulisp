@@ -5,12 +5,12 @@ const { Context } = require('./utility/Context');
 
 const SYSCALL_TABLE = {
   darwin: {
-    sys_write: 0x2000004,
-    sys_exit: 0x2000001,
+    write: 0x2000004,
+    exit: 0x2000001,
   },
   linux: {
-    sys_write: 1,
-    sys_exit: 60,
+    write: 1,
+    exit: 60,
   },
 }[process.platform];
 
@@ -29,8 +29,8 @@ class Compiler {
       '<': this.compileOp('icmp slt'),
       '>': this.compileOp('icmp sgt'),
       '=': this.compileOp('icmp eq'),
-      'syscall/sys_write': this.compileSyscall(SYSCALL_TABLE.sys_write),
-      'syscall/sys_exit': this.compileSyscall(SYSCALL_TABLE.sys_exit),
+      'syscall/write': this.compileSyscall(SYSCALL_TABLE.write),
+      'syscall/exit': this.compileSyscall(SYSCALL_TABLE.exit),
     };
   }
 

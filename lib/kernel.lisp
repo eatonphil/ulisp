@@ -1,5 +1,5 @@
 (def print-char (c)
-     (syscall/sys_write 1 &c 1))
+     (syscall/write 1 &c 1))
 
 (def print (n)
      (if (> n 9)
