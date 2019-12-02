@@ -25,7 +25,7 @@ class Scope {
 
   assign(name) {
     const safe = name.replace('-', '_');
-    this.map[name] = this.localOffset++;
+    this.map[safe] = this.localOffset++;
     return safe;
   }
 
@@ -35,7 +35,11 @@ class Scope {
 
   lookup(name) {
     const safe = name.replace('-', '_');
-    return this.map[name];
+    if (this.map[safe]) {
+      return { name: safe, offset: this.map[safe] };
+    }
+
+    return null;
   }
 
   copy() {
@@ -79,7 +83,7 @@ class Compiler {
     }
 
     // Operations that use RAX implicitly
-    const prepareRax = (instruction) => (arg, scope, depth) => {
+    const prepareRax = (instruction, outRegister = 'RAX') => (arg, scope, depth) => {
       depth++;
       this.emit(depth, `# ${instruction.toUpperCase()}`);
 
@@ -97,7 +101,7 @@ class Compiler {
       this.emit(depth, `${instruction.toUpperCase()} QWORD PTR [RSP]`);
 
       // Swap the top of the stack
-      this.emit(depth, `MOV [RSP], RAX`);
+      this.emit(depth, `MOV [RSP], ${outRegister}`);
     }
 
     const prepareComparison = (operator) => (arg, scope, depth) => {
@@ -142,6 +146,7 @@ class Compiler {
       '=': prepare('mov'),
       '*': prepareRax('mul'),
       '/': prepareRax('div'),
+      '%': prepareRax('div', 'RDX'),
       '>': prepareComparison('>'),
       '>=': prepareComparison('>='),
       '<': prepareComparison('<'),
@@ -185,12 +190,6 @@ class Compiler {
     this.outBuffer.push(indent + args);
   }
 
-  store(name, scope) {
-    // Store parameter mapped to associated local
-    scope.map[name] = scope.localOffset++;
-    return scope.map[name];
-  }
-
   compileExpression(arg, scope, depth) {
     // Is a nested function call, compile it
     if (Array.isArray(arg)) {
@@ -204,19 +203,19 @@ class Compiler {
     }
 
     if (arg.startsWith('&')) {
-      const localOffset = scope.lookup(arg.substring(1));
+      const { offset } = scope.lookup(arg.substring(1));
       // Copy the frame pointer so we can return an offset from it
       this.emit(depth, `MOV RAX, RBP`);
-      const operation = localOffset < 0 ? 'ADD' : 'SUB';
-      this.emit(depth, `${operation} RAX, ${Math.abs(localOffset * 8)} # ${arg}`);
-      this.emit(depth, `PUSH `);
+      const operation = offset < 0 ? 'ADD' : 'SUB';
+      this.emit(depth, `${operation} RAX, ${Math.abs(offset * 8)} # ${arg}`);
+      this.emit(depth, `PUSH RAX`);
       return;
     }
 
-    const localOffset = scope.lookup(arg);
-    if (localOffset) {
-      const operation = localOffset < 0 ? '+' : '-';
-      this.emit(depth, `PUSH [RBP ${operation} ${Math.abs(localOffset * 8)}] # ${arg}`);
+    const { offset } = scope.lookup(arg);
+    if (offset) {
+      const operation = offset < 0 ? '+' : '-';
+      this.emit(depth, `PUSH [RBP ${operation} ${Math.abs(offset * 8)}] # ${arg}`);
     } else {
       throw new Error(
         'Attempt to reference undefined variable or unsupported literal: ' +
@@ -297,9 +296,9 @@ class Compiler {
     args.map((arg, i) =>
       this.compileExpression(arg, scope, depth));
 
-    const validFunction = scope.lookup(fun);
-    if (validFunction) {
-      this.emit(depth, `CALL ${fun}`);
+    const fn = scope.lookup(fun);
+    if (fn) {
+      this.emit(depth, `CALL ${fn.name}`);
     } else {
       throw new Error('Attempt to call undefined function: ' + fun);
     }
