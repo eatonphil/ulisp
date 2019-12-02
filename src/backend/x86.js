@@ -61,51 +61,61 @@ class Compiler {
 
   prepareInstructionWrappers() {
     // General operatations
-    const prepare = (instruction) => (arg, scope) => {
+    const prepare = (instruction) => (arg, scope, depth) => {
+      depth++;
+      this.emit(depth, `# ${instruction.toUpperCase()}`);
+
       // Compile first argument
-      this.compileExpression(arg[0], scope);
-      this.emit(1, `POP RAX`);
+      this.compileExpression(arg[0], scope, depth);
 
       // Compile second argument
-      this.compileExpression(arg[1], scope);
+      this.compileExpression(arg[1], scope, depth);
+      this.emit(depth, `POP RAX`);
 
       // Compile operation
-      this.emit(1, `${instruction.toUpperCase()} RAX, [RSP]`);
+      this.emit(depth, `${instruction.toUpperCase()} [RSP], RAX`);
 
-      // Swap the top of the stack
-      this.emit(1, `MOV [RSP], RAX`);
+      this.emit(depth, `# End ${instruction.toUpperCase()}`);
     }
 
     // Operations that use RAX implicitly
-    const prepareRax = (instruction) => (arg, scope) => {
+    const prepareRax = (instruction) => (arg, scope, depth) => {
+      depth++;
+      this.emit(depth, `# ${instruction.toUpperCase()}`);
+
       // Compile first argument, store in RAX
-      this.compileExpression(arg[0]);
-      this.emit(1, `POP RAX`);
+      this.compileExpression(arg[0], scope, depth);
 
       // Compile second argument
-      this.compileExpression(arg[1], scope);
+      this.compileExpression(arg[1], scope, depth);
+
+      // Must POP _after_ both have been compiled
+      this.emit(depth, `POP RAX`);
+      this.emit(depth, `XCHG [RSP], RAX`);
 
       // Compiler operation
-      this.emit(1, `${instruction.toUpperCase()} QWORD PTR [RSP]`);
+      this.emit(depth, `${instruction.toUpperCase()} QWORD PTR [RSP]`);
 
       // Swap the top of the stack
-      this.emit(1, `MOV [RSP], RAX`);
+      this.emit(depth, `MOV [RSP], RAX`);
     }
 
-    const prepareComparison = (operator) => (arg, scope) => {
-      this.emit(0, '');
+    const prepareComparison = (operator) => (arg, scope, depth) => {
+      depth++;
+      this.emit(depth, `# ${operator}`);
+
       // Compile first argument, store in RAX
-      this.compileExpression(arg[0], scope);
-      this.emit(1, `POP RAX`);
+      this.compileExpression(arg[0], scope, depth);
 
       // Compile second argument
-      this.compileExpression(arg[1], scope);
+      this.compileExpression(arg[1], scope, depth);
+      this.emit(depth, `POP RAX`);
 
       // Compile operation
-      this.emit(1, `CMP RAX, [RSP]`);
+      this.emit(depth, `CMP [RSP], RAX`);
 
       // Reset RAX to serve as CMOV* dest, MOV to keep flags (vs. XOR)
-      this.emit(1, `MOV RAX, 0`);
+      this.emit(depth, `MOV RAX, 0`);
 
       // Conditional set [RSP]
       const operation = {
@@ -117,10 +127,11 @@ class Compiler {
 	'!=': 'CMOVNE',
       }[operator];
       // CMOV* requires the source to be memory or register
-      this.emit(1, `MOV DWORD PTR [RSP], 1`);
+      this.emit(depth, `MOV DWORD PTR [RSP], 1`);
       // CMOV* requires the dest to be a register
-      this.emit(1, `${operation} RAX, [RSP]`);
-      this.emit(1, `MOV [RSP], RAX\n`);
+      this.emit(depth, `${operation} RAX, [RSP]`);
+      this.emit(depth, `MOV [RSP], RAX`);
+      this.emit(depth, `# End ${operator}`);
     };
 
     return {
@@ -144,20 +155,20 @@ class Compiler {
 
     const wrappers = {};
     Object.keys(SYSCALL_MAP).forEach((key, obj) => {
-      wrappers[`syscall/${key}`] = (args, scope) => {
+      wrappers[`syscall/${key}`] = (args, scope, depth) => {
 	if (args.length > registers.length) {
 	  throw new Error(`Too many arguments to syscall/${key}`);
 	}
 
 	// Compile first
-	args.forEach((arg) => this.compileExpression(arg, scope));
+	args.forEach((arg) => this.compileExpression(arg, scope, depth));
 
 	// Then pop to avoid possible register contention
-	args.forEach((_, i) => this.emit(1, `POP ${registers[args.length - i - 1]}`))
+	args.forEach((_, i) => this.emit(depth, `POP ${registers[args.length - i - 1]}`))
 
-	this.emit(1, `MOV RAX, ${SYSCALL_MAP[key]}`);
-	this.emit(1, 'SYSCALL');
-	this.emit(1, `PUSH RAX`);
+	this.emit(depth, `MOV RAX, ${SYSCALL_MAP[key]}`);
+	this.emit(depth, 'SYSCALL');
+	this.emit(depth, `PUSH RAX`);
       };
     });
 
@@ -179,32 +190,32 @@ class Compiler {
     return scope.map[name];
   }
 
-  compileExpression(arg, scope) {
+  compileExpression(arg, scope, depth) {
     // Is a nested function call, compile it
     if (Array.isArray(arg)) {
-      this.compileCall(arg[0], arg.slice(1), scope);
+      this.compileCall(arg[0], arg.slice(1), scope, depth);
       return;
     }
 
     if (Number.isInteger(arg)) {
-      this.emit(1, `PUSH ${arg}`);
+      this.emit(depth, `PUSH ${arg}`);
       return;
     }
 
     if (arg.startsWith('&')) {
       const localOffset = scope.lookup(arg.substring(1));
       // Copy the frame pointer so we can return an offset from it
-      this.emit(1, `MOV RAX, RBP`);
+      this.emit(depth, `MOV RAX, RBP`);
       const operation = localOffset < 0 ? 'ADD' : 'SUB';
-      this.emit(1, `${operation} RAX, ${Math.abs(localOffset * 8)} # ${arg}`);
-      this.emit(1, `PUSH `);
+      this.emit(depth, `${operation} RAX, ${Math.abs(localOffset * 8)} # ${arg}`);
+      this.emit(depth, `PUSH `);
       return;
     }
 
     const localOffset = scope.lookup(arg);
     if (localOffset) {
       const operation = localOffset < 0 ? '+' : '-';
-      this.emit(1, `PUSH [RBP ${operation} ${Math.abs(localOffset * 8)}] # ${arg}`);
+      this.emit(depth, `PUSH [RBP ${operation} ${Math.abs(localOffset * 8)}] # ${arg}`);
     } else {
       throw new Error(
         'Attempt to reference undefined variable or unsupported literal: ' +
@@ -213,31 +224,36 @@ class Compiler {
     }
   }
 
-  compileIf([test, then, els], scope) {
+  compileIf([test, then, els], scope, depth) {
+    this.emit(depth, '# If');
     // Compile test
-    this.compileExpression(test, scope);
+    this.compileExpression(test, scope, depth);
     const branch = `else_branch` + GLOBAL_COUNTER++;
     // Must pop/use up argument in test
-    this.emit(1, `POP RAX`);
-    this.emit(1, `TEST RAX, RAX`);
-    this.emit(1, `JZ .${branch}`);
+    this.emit(0, '');
+    this.emit(depth, `POP RAX`);
+    this.emit(depth, `TEST RAX, RAX`);
+    this.emit(depth, `JZ .${branch}\n`);
 
     // Compile then section
-    this.compileExpression(then, scope);
-    this.emit(1, `JMP .after_${branch}`);
+    this.emit(depth, `# If then`);
+    this.compileExpression(then, scope, depth);
+    this.emit(depth, `JMP .after_${branch}\n`);
 
     // Compile else section
+    this.emit(depth, `# If else`);
     this.emit(0, `.${branch}:`);
-    this.compileExpression(els, scope);
-    this.emit(0, `.after_${branch}:\n`);
+    this.compileExpression(els, scope, depth);
+    this.emit(0, `.after_${branch}:`);
+    this.emit(depth, '# End if');
   }
 
-  compileBegin(body, scope) {
+  compileBegin(body, scope, depth) {
     body.forEach((expression) =>
-      this.compileExpression(expression, scope));
+      this.compileExpression(expression, scope, depth));
   }
 
-  compileDefine([name, params, ...body], scope) {
+  compileDefine([name, params, ...body], scope, depth) {
     // Add this function to outer scope
     const safe = scope.assign(name);
 
@@ -245,8 +261,8 @@ class Compiler {
     const childScope = scope.copy();
 
     this.emit(0, `${safe}:`);
-    this.emit(1, `PUSH RBP`);
-    this.emit(1, `MOV RBP, RSP\n`);
+    this.emit(depth, `PUSH RBP`);
+    this.emit(depth, `MOV RBP, RSP\n`);
 
     // Copy params into local stack
     // NOTE: this doesn't actually copy into the local stack, it
@@ -258,39 +274,43 @@ class Compiler {
     });
 
     // Pass childScope in for reference when body is compiled.
-    this.compileBegin(body, childScope);
+    this.compileBegin(body, childScope, depth);
 
     // Save the return value
     this.emit(0, '');
-    this.emit(1, `POP RAX`);
-    this.emit(1, `POP RBP\n`);
+    this.emit(depth, `POP RAX`);
+    this.emit(depth, `POP RBP\n`);
 
-    this.emit(1, 'RET\n');
+    this.emit(depth, 'RET\n');
   }
 
-  compileCall(fun, args, scope) {
+  compileCall(fun, args, scope, depth) {
     if (this.primitiveFunctions[fun]) {
-      this.primitiveFunctions[fun](args, scope);
+      this.primitiveFunctions[fun](args, scope, depth);
       return;
     }
 
     // Compile registers and store on the stack
     args.map((arg, i) =>
-      this.compileExpression(arg, scope));
+      this.compileExpression(arg, scope, depth));
 
     const validFunction = scope.lookup(fun);
     if (validFunction) {
-      this.emit(1, `CALL ${fun}`);
+      this.emit(depth, `CALL ${fun}`);
     } else {
       throw new Error('Attempt to call undefined function: ' + fun);
     }
 
-    if (args.length) {
+    if (args.length > 1) {
       // Drop the args
-      this.emit(1, `ADD RSP, ${args.length * 8}`);
+      this.emit(depth, `ADD RSP, ${args.length * 8}`);
     }
 
-    this.emit(1, 'PUSH RAX\n');
+    if (args.length === 1) {
+      this.emit(depth, `MOV [RSP], RAX\n`);
+    } else {
+      this.emit(depth, 'PUSH RAX\n');
+    }
   }
 
   emitPrefix() {
@@ -319,7 +339,7 @@ module.exports.compile = function(ast) {
   const c = new Compiler();
   c.emitPrefix();
   const s = new Scope();
-  c.compileCall('begin', ast, s);
+  c.compileCall('begin', ast, s, 1);
   c.emitPostfix();
   return c.getOutput();
 };
