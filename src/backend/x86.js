@@ -141,6 +141,7 @@ class Compiler {
       '|': prepare('or'),
       '=': prepare('mov'),
       '*': prepareRax('mul'),
+      '/': prepareRax('div'),
       '>': prepareComparison('>'),
       '>=': prepareComparison('>='),
       '<': prepareComparison('<'),
@@ -243,7 +244,9 @@ class Compiler {
     // Compile else section
     this.emit(depth, `# If else`);
     this.emit(0, `.${branch}:`);
-    this.compileExpression(els, scope, depth);
+    if (els) {
+      this.compileExpression(els, scope, depth);
+    }
     this.emit(0, `.after_${branch}:`);
     this.emit(depth, '# End if');
   }
