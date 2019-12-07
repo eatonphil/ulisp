@@ -97,6 +97,11 @@ class Compiler {
       this.emit(depth, `POP RAX`);
       this.emit(depth, `XCHG [RSP], RAX`);
 
+      // Reset RDX for DIV
+      if (instruction.toUpperCase() === 'DIV') {
+	this.emit(depth, `XOR RDX, RDX`);
+      }
+
       // Compiler operation
       this.emit(depth, `${instruction.toUpperCase()} QWORD PTR [RSP]`);
 
@@ -245,14 +250,20 @@ class Compiler {
     this.emit(0, `.${branch}:`);
     if (els) {
       this.compileExpression(els, scope, depth);
+    } else {
+      this.emit(1, 'PUSH 0 # Null else branch');
     }
     this.emit(0, `.after_${branch}:`);
     this.emit(depth, '# End if');
   }
 
-  compileBegin(body, scope, depth) {
-    body.forEach((expression) =>
-      this.compileExpression(expression, scope, depth));
+  compileBegin(body, scope, depth, topLevel = false) {
+    body.forEach((expression, i) => {
+      this.compileExpression(expression, scope, depth);
+      if (!topLevel && i < body.length - 1) {
+	this.emit(depth, `POP RAX # Ignore non-final expression`);
+      }
+    });
   }
 
   compileDefine([name, params, ...body], scope, depth) {
@@ -341,7 +352,7 @@ module.exports.compile = function(ast) {
   const c = new Compiler();
   c.emitPrefix();
   const s = new Scope();
-  c.compileCall('begin', ast, s, 1);
+  c.compileBegin(ast, s, 1, true);
   c.emitPostfix();
   return c.getOutput();
 };
