@@ -9,19 +9,21 @@ function range(n) {
 let GLOBAL_COUNTER = 0;
 
 const SYSCALL_MAP = {
-  'darwin': {
+  darwin: {
     exit: '0x2000001',
     write: '0x2000004',
   },
-  'linux': {
+  linux: {
     exit: 60,
-    write: 1,    
+    write: 1,
   },
 }[os.platform()];
 
 class Scope {
-  localOffset = 1;
-  map = {};
+  constructor() {
+    this.localOffset = 1;
+    this.map = {};
+  }
 
   assign(name) {
     const safe = name.replace('-', '_');
@@ -57,7 +59,7 @@ class Compiler {
     this.primitiveFunctions = {
       def: this.compileDefine.bind(this),
       begin: this.compileBegin.bind(this),
-      'if': this.compileIf.bind(this),
+      if: this.compileIf.bind(this),
       ...this.prepareInstructionWrappers(),
       ...this.prepareSyscallWrappers(),
     };
@@ -80,10 +82,14 @@ class Compiler {
       this.emit(depth, `${instruction.toUpperCase()} [RSP], RAX`);
 
       this.emit(depth, `# End ${instruction.toUpperCase()}`);
-    }
+    };
 
     // Operations that use RAX implicitly
-    const prepareRax = (instruction, outRegister = 'RAX') => (arg, scope, depth) => {
+    const prepareRax = (instruction, outRegister = 'RAX') => (
+      arg,
+      scope,
+      depth,
+    ) => {
       depth++;
       this.emit(depth, `# ${instruction.toUpperCase()}`);
 
@@ -99,7 +105,7 @@ class Compiler {
 
       // Reset RDX for DIV
       if (instruction.toUpperCase() === 'DIV') {
-	this.emit(depth, `XOR RDX, RDX`);
+        this.emit(depth, `XOR RDX, RDX`);
       }
 
       // Compiler operation
@@ -107,7 +113,7 @@ class Compiler {
 
       // Swap the top of the stack
       this.emit(depth, `MOV [RSP], ${outRegister}`);
-    }
+    };
 
     const prepareComparison = (operator) => (arg, scope, depth) => {
       depth++;
@@ -128,12 +134,12 @@ class Compiler {
 
       // Conditional set [RSP]
       const operation = {
-	'>': 'CMOVA',
-	'>=': 'CMOVAE',
-	'<': 'CMOVB',
-	'<=': 'CMOVBE',
-	'==': 'CMOVE',
-	'!=': 'CMOVNE',
+        '>': 'CMOVA',
+        '>=': 'CMOVAE',
+        '<': 'CMOVB',
+        '<=': 'CMOVBE',
+        '==': 'CMOVE',
+        '!=': 'CMOVNE',
       }[operator];
       // CMOV* requires the source to be memory or register
       this.emit(depth, `MOV DWORD PTR [RSP], 1`);
@@ -167,19 +173,21 @@ class Compiler {
     const wrappers = {};
     Object.keys(SYSCALL_MAP).forEach((key, obj) => {
       wrappers[`syscall/${key}`] = (args, scope, depth) => {
-	if (args.length > registers.length) {
-	  throw new Error(`Too many arguments to syscall/${key}`);
-	}
+        if (args.length > registers.length) {
+          throw new Error(`Too many arguments to syscall/${key}`);
+        }
 
-	// Compile first
-	args.forEach((arg) => this.compileExpression(arg, scope, depth));
+        // Compile first
+        args.forEach((arg) => this.compileExpression(arg, scope, depth));
 
-	// Then pop to avoid possible register contention
-	args.forEach((_, i) => this.emit(depth, `POP ${registers[args.length - i - 1]}`))
+        // Then pop to avoid possible register contention
+        args.forEach((_, i) =>
+          this.emit(depth, `POP ${registers[args.length - i - 1]}`),
+        );
 
-	this.emit(depth, `MOV RAX, ${SYSCALL_MAP[key]}`);
-	this.emit(depth, 'SYSCALL');
-	this.emit(depth, `PUSH RAX`);
+        this.emit(depth, `MOV RAX, ${SYSCALL_MAP[key]}`);
+        this.emit(depth, 'SYSCALL');
+        this.emit(depth, `PUSH RAX`);
       };
     });
 
@@ -220,11 +228,14 @@ class Compiler {
     const { offset } = scope.lookup(arg);
     if (offset) {
       const operation = offset < 0 ? '+' : '-';
-      this.emit(depth, `PUSH [RBP ${operation} ${Math.abs(offset * 8)}] # ${arg}`);
+      this.emit(
+        depth,
+        `PUSH [RBP ${operation} ${Math.abs(offset * 8)}] # ${arg}`,
+      );
     } else {
       throw new Error(
         'Attempt to reference undefined variable or unsupported literal: ' +
-        arg,
+          arg,
       );
     }
   }
@@ -261,7 +272,7 @@ class Compiler {
     body.forEach((expression, i) => {
       this.compileExpression(expression, scope, depth);
       if (!topLevel && i < body.length - 1) {
-	this.emit(depth, `POP RAX # Ignore non-final expression`);
+        this.emit(depth, `POP RAX # Ignore non-final expression`);
       }
     });
   }
@@ -304,8 +315,7 @@ class Compiler {
     }
 
     // Compile registers and store on the stack
-    args.map((arg, i) =>
-      this.compileExpression(arg, scope, depth));
+    args.map((arg, i) => this.compileExpression(arg, scope, depth));
 
     const fn = scope.lookup(fun);
     if (fn) {
