@@ -60,14 +60,15 @@ class Compiler {
       def: this.compileDefine.bind(this),
       begin: this.compileBegin.bind(this),
       if: this.compileIf.bind(this),
-      ...this.prepareInstructionWrappers(),
+      ...this.prepareArithmeticWrappers(),
+      ...this.prepareLogicalWrappers(),
       ...this.prepareSyscallWrappers(),
     };
   }
 
-  prepareInstructionWrappers() {
+  prepareArithmeticWrappers() {
     // General operatations
-    const prepare = (instruction) => (arg, scope, depth) => {
+    const prepareGeneral = (instruction) => (arg, scope, depth) => {
       depth++;
       this.emit(depth, `# ${instruction.toUpperCase()}`);
 
@@ -115,55 +116,64 @@ class Compiler {
       this.emit(depth, `MOV [RSP], ${outRegister}`);
     };
 
-    const prepareComparison = (operator) => (arg, scope, depth) => {
-      depth++;
-      this.emit(depth, `# ${operator}`);
-
-      // Compile first argument, store in RAX
-      this.compileExpression(arg[0], scope, depth);
-
-      // Compile second argument
-      this.compileExpression(arg[1], scope, depth);
-      this.emit(depth, `POP RAX`);
-
-      // Compile operation
-      this.emit(depth, `CMP [RSP], RAX`);
-
-      // Reset RAX to serve as CMOV* dest, MOV to keep flags (vs. XOR)
-      this.emit(depth, `MOV RAX, 0`);
-
-      // Conditional set [RSP]
-      const operation = {
-        '>': 'CMOVA',
-        '>=': 'CMOVAE',
-        '<': 'CMOVB',
-        '<=': 'CMOVBE',
-        '==': 'CMOVE',
-        '!=': 'CMOVNE',
-      }[operator];
-      // CMOV* requires the source to be memory or register
-      this.emit(depth, `MOV DWORD PTR [RSP], 1`);
-      // CMOV* requires the dest to be a register
-      this.emit(depth, `${operation} RAX, [RSP]`);
-      this.emit(depth, `MOV [RSP], RAX`);
-      this.emit(depth, `# End ${operator}`);
-    };
-
     return {
-      '+': prepare('add'),
-      '-': prepare('sub'),
-      '&': prepare('and'),
-      '|': prepare('or'),
-      '=': prepare('mov'),
+      '+': prepareGeneral('add'),
+      '-': prepareGeneral('sub'),
+      '&': prepareGeneral('and'),
+      '|': prepareGeneral('or'),
+      '=': prepareGeneral('mov'),
       '*': prepareRax('mul'),
       '/': prepareRax('div'),
       '%': prepareRax('div', 'RDX'),
-      '>': prepareComparison('>'),
-      '>=': prepareComparison('>='),
-      '<': prepareComparison('<'),
-      '<=': prepareComparison('<='),
-      '==': prepareComparison('=='),
-      '!=': prepareComparison('!='),
+    };
+  }
+
+  prepareLogicalWrappers() {
+    const prepareComparison = (operator) => {
+      return {
+        [operator]: (arg, scope, depth) => {
+          depth++;
+          this.emit(depth, `# ${operator}`);
+
+          // Compile first argument, store in RAX
+          this.compileExpression(arg[0], scope, depth);
+
+          // Compile second argument
+          this.compileExpression(arg[1], scope, depth);
+          this.emit(depth, `POP RAX`);
+
+          // Compile operation
+          this.emit(depth, `CMP [RSP], RAX`);
+
+          // Reset RAX to serve as CMOV* dest, MOV to keep flags (vs. XOR)
+          this.emit(depth, `MOV RAX, 0`);
+
+          // Conditional set [RSP]
+          const operation = {
+            '>': 'CMOVA',
+            '>=': 'CMOVAE',
+            '<': 'CMOVB',
+            '<=': 'CMOVBE',
+            '==': 'CMOVE',
+            '!=': 'CMOVNE',
+          }[operator];
+          // CMOV* requires the source to be memory or register
+          this.emit(depth, `MOV DWORD PTR [RSP], 1`);
+          // CMOV* requires the dest to be a register
+          this.emit(depth, `${operation} RAX, [RSP]`);
+          this.emit(depth, `MOV [RSP], RAX`);
+          this.emit(depth, `# End ${operator}`);
+        },
+      };
+    };
+
+    return {
+      ...prepareComparison('>'),
+      ...prepareComparison('>='),
+      ...prepareComparison('<'),
+      ...prepareComparison('<='),
+      ...prepareComparison('=='),
+      ...prepareComparison('!='),
     };
   }
 
@@ -288,7 +298,7 @@ class Compiler {
     this.emit(depth, `PUSH RBP`);
     this.emit(depth, `MOV RBP, RSP\n`);
 
-    // Copy params into local stack
+    // Copy params into local scope
     // NOTE: this doesn't actually copy into the local stack, it
     // just references them from the caller. They will need to
     // be copied in to support mutation of arguments if that's
