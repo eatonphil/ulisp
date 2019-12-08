@@ -5,12 +5,12 @@ const { Context } = require('./utility/Context');
 
 const SYSCALL_TABLE = {
   darwin: {
-    sys_write: 0x2000004,
-    sys_exit: 0x2000001,
+    write: 0x2000004,
+    exit: 0x2000001,
   },
   linux: {
-    sys_write: 1,
-    sys_exit: 60,
+    write: 1,
+    exit: 60,
   },
 }[process.platform];
 
@@ -20,7 +20,7 @@ class Compiler {
     this.primitiveFunctions = {
       def: this.compileDefine.bind(this),
       begin: this.compileBegin.bind(this),
-      'if': this.compileIf.bind(this),
+      if: this.compileIf.bind(this),
       '+': this.compileOp('add'),
       '-': this.compileOp('sub'),
       '*': this.compileOp('mul'),
@@ -29,8 +29,8 @@ class Compiler {
       '<': this.compileOp('icmp slt'),
       '>': this.compileOp('icmp sgt'),
       '=': this.compileOp('icmp eq'),
-      'syscall/sys_write': this.compileSyscall(SYSCALL_TABLE.sys_write),
-      'syscall/sys_exit': this.compileSyscall(SYSCALL_TABLE.sys_exit),
+      'syscall/write': this.compileSyscall(SYSCALL_TABLE.write),
+      'syscall/exit': this.compileSyscall(SYSCALL_TABLE.exit),
     };
   }
 
@@ -41,17 +41,22 @@ class Compiler {
 
   compileSyscall(id) {
     return (args, destination, context) => {
-      const argTmps = args.map((arg) => {
-	const tmp = context.scope.symbol();
-	this.compileExpression(arg, tmp, context);
-	return tmp.type + ' %' + tmp.value;
-      }).join(', ');
+      const argTmps = args
+        .map((arg) => {
+          const tmp = context.scope.symbol();
+          this.compileExpression(arg, tmp, context);
+          return tmp.type + ' %' + tmp.value;
+        })
+        .join(', ');
       const regs = ['rdi', 'rsi', 'rdx', 'r10', 'r8', 'r9'];
       const params = args.map((arg, i) => `{${regs[i]}}`).join(',');
       const idTmp = context.scope.symbol().value;
-      this.emit(1, `%${idTmp} = add i64 ${id}, 0`)
-      this.emit(1, `%${destination.value} = call ${destination.type} asm sideeffect "syscall", "=r,{rax},${params},~{dirflag},~{fpsr},~{flags}" (i64 %${idTmp}, ${argTmps})`);
-    }
+      this.emit(1, `%${idTmp} = add i64 ${id}, 0`);
+      this.emit(
+        1,
+        `%${destination.value} = call ${destination.type} asm sideeffect "syscall", "=r,{rax},${params},~{dirflag},~{fpsr},~{flags}" (i64 %${idTmp}, ${argTmps})`,
+      );
+    };
   }
 
   compileOp(op) {
@@ -60,7 +65,10 @@ class Compiler {
       const arg2 = context.scope.symbol();
       this.compileExpression(a, arg1, context);
       this.compileExpression(b, arg2, context);
-      this.emit(1, `%${destination.value} = ${op} ${arg1.type} %${arg1.value}, %${arg2.value}`);
+      this.emit(
+        1,
+        `%${destination.value} = ${op} ${arg1.type} %${arg1.value}, %${arg2.value}`,
+      );
     };
   }
 
@@ -83,7 +91,10 @@ class Compiler {
       this.compileExpression(symbol, tmp, context);
       this.emit(1, `%${destination.value} = alloca ${tmp.type}, align 4`);
       destination.type = tmp.type + '*';
-      this.emit(1, `store ${tmp.type} %${tmp.value}, ${destination.type} %${destination.value}, align 4`);
+      this.emit(
+        1,
+        `store ${tmp.type} %${tmp.value}, ${destination.type} %${destination.value}, align 4`,
+      );
       return;
     }
 
@@ -106,13 +117,13 @@ class Compiler {
       const contextClone = context.copy();
       contextClone.scope = context.scope;
       if (!isLast) {
-	contextClone.tailCallTree = [];
+        contextClone.tailCallTree = [];
       }
 
       this.compileExpression(
         expression,
         isLast ? destination : context.scope.symbol(),
-	contextClone,
+        contextClone,
       );
     });
   }
@@ -128,13 +139,19 @@ class Compiler {
     this.compileExpression(test, testVariable, context);
     const trueLabel = context.scope.symbol('iftrue').value;
     const falseLabel = context.scope.symbol('iffalse').value;
-    this.emit(1, `br i1 %${testVariable.value}, label %${trueLabel}, label %${falseLabel}`);
+    this.emit(
+      1,
+      `br i1 %${testVariable.value}, label %${trueLabel}, label %${falseLabel}`,
+    );
 
     // Compile true section
     this.emit(0, trueLabel + ':');
     const tmp1 = context.scope.symbol();
     this.compileExpression(thenBlock, tmp1, context);
-    this.emit(1, `store ${tmp1.type} %${tmp1.value}, ${result.type} %${result.value}, align 4`);
+    this.emit(
+      1,
+      `store ${tmp1.type} %${tmp1.value}, ${result.type} %${result.value}, align 4`,
+    );
     const endLabel = context.scope.symbol('ifend').value;
     this.emit(1, 'br label %' + endLabel);
 
@@ -143,13 +160,19 @@ class Compiler {
     if (elseBlock) {
       const tmp2 = context.scope.symbol();
       this.compileExpression(elseBlock, tmp2, context);
-      this.emit(1, `store ${tmp2.type} %${tmp2.value}, ${result.type} %${result.value}, align 4`);
+      this.emit(
+        1,
+        `store ${tmp2.type} %${tmp2.value}, ${result.type} %${result.value}, align 4`,
+      );
     }
     this.emit(1, 'br label %' + endLabel);
 
     // Compile cleanup
     this.emit(0, endLabel + ':');
-    this.emit(1, `%${destination.value} = load ${destination.type}, ${result.type} %${result.value}, align 4`);
+    this.emit(
+      1,
+      `%${destination.value} = load ${destination.type}, ${result.type} %${result.value}, align 4`,
+    );
   }
 
   compileDefine([name, params, ...body], destination, context) {
@@ -194,14 +217,18 @@ class Compiler {
           this.compileExpression(a, res, context);
           return res.type + ' %' + res.value;
         })
-	.join(', ');
+        .join(', ');
 
-      const isTailCall = module.exports.TAIL_CALL_ENABLED &&
-			 context.tailCallTree.includes(validFunction.value);
+      const isTailCall =
+        module.exports.TAIL_CALL_ENABLED &&
+        context.tailCallTree.includes(validFunction.value);
       const maybeTail = isTailCall ? 'tail ' : '';
-      this.emit(1, `%${destination.value} = ${maybeTail}call ${validFunction.type} @${validFunction.value}(${safeArgs})`);
+      this.emit(
+        1,
+        `%${destination.value} = ${maybeTail}call ${validFunction.type} @${validFunction.value}(${safeArgs})`,
+      );
       if (isTailCall) {
-	this.emit(1, `ret ${destination.type} %${destination.value}`);
+        this.emit(1, `ret ${destination.type} %${destination.value}`);
       }
     } else {
       throw new Error('Attempt to call undefined function: ' + fun);
@@ -223,7 +250,9 @@ module.exports.compile = function(ast) {
 module.exports.build = function(buildDir, program) {
   const prog = 'prog';
   fs.writeFileSync(buildDir + `/${prog}.ll`, program);
-  cp.execSync(`llc --x86-asm-syntax=intel -o ${buildDir}/${prog}.s ${buildDir}/${prog}.ll`);
+  cp.execSync(
+    `llc --x86-asm-syntax=intel -o ${buildDir}/${prog}.s ${buildDir}/${prog}.ll`,
+  );
   cp.execSync(`gcc -o ${buildDir}/${prog} -masm=intel ${buildDir}/${prog}.s`);
 };
 
