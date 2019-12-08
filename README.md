@@ -7,6 +7,9 @@ A compiler for a lisp-like language written in JavaScript targeting LLVM, x86 as
 1. [Lisp to assembly](http://notes.eatonphil.com/compiler-basics-lisp-to-assembly.html)
 2. [User-defined functions and variables](http://notes.eatonphil.com/compiler-basics-functions.html)
 3. [LLVM](http://notes.eatonphil.com/compiler-basics-llvm.html)
+4. [LLVM conditionals and compiling fibonacci](http://notes.eatonphil.com/compiler-basics-llvm-conditionals.html)
+5. [LLVM system calls](http://notes.eatonphil.com/compiler-basics-llvm-system-calls.html)
+6. [An x86 upgrade](http://notes.eatonphil.com/compiler-basics-an-x86-upgrade.html)
 
 ### Example
 
